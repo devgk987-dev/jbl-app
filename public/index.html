@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Vote – Battle de Danse</title>
+
+<style>
+    body {
+        background:#000;
+        color:#ff7b00;
+        font-family:Arial, sans-serif;
+        margin:0;
+        padding:20px;
+        text-align:center;
+    }
+
+    h1 {
+        font-size:40px;
+        margin-bottom:20px;
+        text-shadow:0 0 25px #ff7b00;
+    }
+
+    #matchInfo {
+        font-size:28px;
+        margin-bottom:20px;
+        text-shadow:0 0 15px #ff7b00;
+    }
+
+    .vote-btn {
+        display:none;
+        padding:20px 40px;
+        margin:20px;
+        font-size:30px;
+        font-weight:bold;
+        background:#ff7b00;
+        color:#000;
+        border:none;
+        border-radius:15px;
+        cursor:pointer;
+        box-shadow:0 0 20px #ff7b00;
+    }
+
+    #message {
+        font-size:24px;
+        margin-top:20px;
+        text-shadow:0 0 15px #ff7b00;
+    }
+</style>
+
+<script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+
+<h1>Vote en Direct</h1>
+
+<div id="matchInfo">En attente d’un duel…</div>
+
+<button id="btnA" class="vote-btn"></button>
+<button id="btnB" class="vote-btn"></button>
+
+<div id="message"></div>
+
+<script>
+const socket = io();
+
+let canVote = false;   // 🔥 Le vote n'est possible que si l'admin lance le vote
+let hasVoted = false;  // 🔥 Vote unique
+
+/* Quand un duel commence */
+socket.on("duelStarted", ({ match }) => {
+    document.getElementById("matchInfo").innerHTML =
+        `🔥 <b>${match.a}</b> vs <b>${match.b}</b> 🔥`;
+
+    // Masquer les boutons tant que le vote n'est pas lancé
+    document.getElementById("btnA").style.display = "none";
+    document.getElementById("btnB").style.display = "none";
+
+    hasVoted = false;
+    canVote = false;
+
+    document.getElementById("message").innerHTML =
+        "En attente du lancement du vote…";
+});
+
+/* Quand l'admin lance le vote */
+socket.on("voteStarted", ({ match }) => {
+    canVote = true;
+    hasVoted = false;
+
+    document.getElementById("btnA").textContent = match.a;
+    document.getElementById("btnB").textContent = match.b;
+
+    document.getElementById("btnA").style.display = "inline-block";
+    document.getElementById("btnB").style.display = "inline-block";
+
+    document.getElementById("message").innerHTML =
+        "🗳 Le vote est ouvert !";
+});
+
+/* Quand le vote se termine */
+socket.on("voteEnded", () => {
+    canVote = false;
+
+    document.getElementById("btnA").style.display = "none";
+    document.getElementById("btnB").style.display = "none";
+
+    document.getElementById("message").innerHTML =
+        "Le vote est terminé.";
+});
+
+/* Gagnant annoncé */
+socket.on("winnerAnnounced", ({ winner }) => {
+    document.getElementById("message").innerHTML =
+        `🏆 Gagnant : <b>${winner}</b>`;
+});
+
+/* Fonction de vote sécurisée */
+function sendVote(choice) {
+    if (!canVote) {
+        document.getElementById("message").innerHTML =
+            "Le vote n'est pas encore ouvert !";
+        return;
+    }
+
+    if (hasVoted) {
+        document.getElementById("message").innerHTML =
+            "Tu as déjà voté !";
+        return;
+    }
+
+    hasVoted = true;
+    socket.emit("vote", { choice });
+
+    document.getElementById("message").innerHTML =
+        "Merci, ton vote a été pris en compte !";
+
+    document.getElementById("btnA").style.display = "none";
+    document.getElementById("btnB").style.display = "none";
+}
+
+/* Boutons */
+document.getElementById("btnA").onclick = () => sendVote("A");
+document.getElementById("btnB").onclick = () => sendVote("B");
+</script>
+
+</body>
+</html>

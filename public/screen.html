@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>ÉCRAN – Battle de Danse</title>
+
+<style>
+    body {
+        background:#000;
+        color:#ff7b00;
+        font-family:Arial, sans-serif;
+        margin:0;
+        padding:20px;
+        text-align:center;
+    }
+
+    h1 {
+        font-size:40px;
+        margin-bottom:20px;
+        text-shadow:0 0 25px #ff7b00;
+    }
+
+    #matchInfo {
+        font-size:45px;
+        margin-bottom:30px;
+        text-shadow:0 0 25px #ff7b00;
+        display:none;
+    }
+
+    /* Barre de temps */
+    #timerBarContainer {
+        width:80%;
+        height:25px;
+        background:#222;
+        margin:20px auto;
+        border-radius:15px;
+        overflow:hidden;
+        display:none;
+    }
+
+    #timerBar {
+        height:100%;
+        width:100%;
+        background:#ff7b00;
+        transition:width 1s linear;
+    }
+
+    /* Barres de votes */
+    .voteBarContainer {
+        width:80%;
+        height:35px;
+        background:#222;
+        margin:20px auto;
+        border-radius:15px;
+        overflow:hidden;
+        display:none;
+    }
+
+    .voteBar {
+        height:100%;
+        width:0%;
+        background:#ff7b00;
+        transition:width 0.3s ease;
+    }
+
+    #winnerDisplay {
+        font-size:55px;
+        margin-top:40px;
+        display:none;
+        text-shadow:0 0 25px #ff7b00;
+    }
+
+    /* Bracket */
+    #bracket {
+        display:flex;
+        gap:20px;
+        overflow-x:auto;
+        padding:10px;
+    }
+
+    .round-column {
+        min-width:300px;
+        background:#111;
+        padding:15px;
+        border-radius:10px;
+        box-shadow:0 0 15px #ff7b00;
+    }
+
+    .round-title {
+        font-size:26px;
+        margin-bottom:15px;
+        text-shadow:0 0 15px #ff7b00;
+    }
+
+    .match-box {
+        background:#000;
+        border:1px solid #ff7b00;
+        padding:15px;
+        border-radius:10px;
+        margin-bottom:20px;
+        font-size:22px;
+        box-shadow:0 0 10px #ff7b00;
+    }
+
+    .winner {
+        color:#00ff00;
+        font-weight:bold;
+        text-shadow:0 0 10px #00ff00;
+    }
+</style>
+
+<script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+
+<h1>BATTLE DE DANSE – Écran Public</h1>
+
+<div id="matchInfo"></div>
+
+<!-- Barre de progression du temps -->
+<div id="timerBarContainer">
+    <div id="timerBar"></div>
+</div>
+
+<!-- Barres de votes -->
+<div id="voteA" class="voteBarContainer">
+    <div id="voteBarA" class="voteBar"></div>
+</div>
+
+<div id="voteB" class="voteBarContainer">
+    <div id="voteBarB" class="voteBar"></div>
+</div>
+
+<div id="winnerDisplay"></div>
+
+<div id="bracket"></div>
+
+<script>
+const socket = io();
+
+let halfTimeReached = false;
+
+/* 🔥 Affichage du bracket (inchangé) */
+socket.on("bracketUpdate", (bracket) => {
+    const container = document.getElementById("bracket");
+    container.innerHTML = "";
+
+    bracket.rounds.forEach((round, rIndex) => {
+        const col = document.createElement("div");
+        col.className = "round-column";
+
+        const title = document.createElement("div");
+        title.className = "round-title";
+
+        if (rIndex === 0) title.textContent = "Qualification";
+        else if (rIndex === bracket.rounds.length - 1) title.textContent = "Finale";
+        else if (rIndex === bracket.rounds.length - 2) title.textContent = "Demi‑Finale";
+        else title.textContent = "Round " + rIndex;
+
+        col.appendChild(title);
+
+        round.forEach((m, mIndex) => {
+            if (!m) return;
+
+            const box = document.createElement("div");
+            box.className = "match-box";
+
+            const a = m.a || "-";
+            const b = m.b || "-";
+
+            let winnerText = "";
+            if (m.winner) {
+                winnerText = `<br><span class="winner">Gagnant : ${m.winner}</span>`;
+            }
+
+            box.innerHTML = `
+                <b>Match #${mIndex+1}</b><br><br>
+                ${a}<br>vs<br>${b}
+                ${winnerText}
+            `;
+
+            col.appendChild(box);
+        });
+
+        container.appendChild(col);
+    });
+});
+
+/* 🔥 Quand un duel commence */
+socket.on("duelStarted", ({ match }) => {
+    document.getElementById("matchInfo").style.display = "block";
+    document.getElementById("matchInfo").innerHTML =
+        `${match.a} <br>VS<br> ${match.b}`;
+
+    // Cacher tout au début
+    document.getElementById("timerBarContainer").style.display = "none";
+    document.getElementById("voteA").style.display = "none";
+    document.getElementById("voteB").style.display = "none";
+    document.getElementById("winnerDisplay").style.display = "none";
+
+    document.getElementById("voteBarA").style.width = "0%";
+    document.getElementById("voteBarB").style.width = "0%";
+
+    halfTimeReached = false;
+});
+
+/* 🔥 Quand le vote commence */
+socket.on("voteStarted", ({ match }) => {
+    document.getElementById("timerBarContainer").style.display = "block";
+    document.getElementById("voteA").style.display = "block";
+    document.getElementById("voteB").style.display = "block";
+
+    halfTimeReached = false;
+});
+
+/* 🔥 Timer */
+socket.on("voteProgress", ({ remaining, total }) => {
+    const percent = (remaining / total) * 100;
+    document.getElementById("timerBar").style.width = percent + "%";
+
+    // Suspense à mi-temps
+    if (!halfTimeReached && remaining <= total / 2) {
+        halfTimeReached = true;
+
+        document.getElementById("voteA").style.display = "none";
+        document.getElementById("voteB").style.display = "none";
+    }
+});
+
+/* 🔥 Mise à jour des votes */
+socket.on("update", (votes) => {
+    const totalVotes = votes.A + votes.B;
+    if (totalVotes === 0) return;
+
+    const percentA = (votes.A / totalVotes) * 100;
+    const percentB = (votes.B / totalVotes) * 100;
+
+    if (!halfTimeReached) {
+        document.getElementById("voteBarA").style.width = percentA + "%";
+        document.getElementById("voteBarB").style.width = percentB + "%";
+    }
+});
+
+/* 🔥 Fin du vote */
+socket.on("voteEnded", () => {
+    document.getElementById("timerBarContainer").style.display = "none";
+});
+
+/* 🔥 Gagnant */
+socket.on("winnerAnnounced", ({ winner }) => {
+    document.getElementById("winnerDisplay").innerHTML =
+        `🏆 Le gagnant est : <br><b>${winner}</b>`;
+    document.getElementById("winnerDisplay").style.display = "block";
+});
+</script>
+
+</body>
+</html>

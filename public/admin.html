@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>ADMIN – Battle de Danse</title>
+
+<style>
+    body {
+        background:#000;
+        color:#ff7b00;
+        font-family:Arial, sans-serif;
+        margin:0;
+        padding:20px;
+    }
+
+    h1 {
+        text-align:center;
+        font-size:32px;
+        text-shadow:0 0 20px #ff7b00;
+    }
+
+    #crewList {
+        width:100%;
+        max-width:400px;
+        margin:auto;
+        margin-bottom:20px;
+    }
+
+    #crewList input {
+        width:100%;
+        padding:10px;
+        margin-bottom:10px;
+        border:none;
+        border-radius:8px;
+        font-size:18px;
+    }
+
+    #crewList button {
+        width:100%;
+        padding:12px;
+        background:#ff7b00;
+        border:none;
+        border-radius:8px;
+        font-size:20px;
+        font-weight:bold;
+        color:#000;
+        cursor:pointer;
+        margin-bottom:20px;
+        box-shadow:0 0 15px #ff7b00;
+    }
+
+    #crewDisplay {
+        color:white;
+        margin-top:20px;
+        font-size:20px;
+        text-align:center;
+    }
+
+    .crew-item {
+        margin:5px 0;
+    }
+
+    .delete-btn {
+        background:red;
+        color:white;
+        border:none;
+        padding:4px 10px;
+        margin-left:10px;
+        border-radius:6px;
+        cursor:pointer;
+        font-size:14px;
+    }
+
+    #bracket {
+        display:flex;
+        gap:20px;
+        overflow-x:auto;
+        padding:10px;
+    }
+
+    .round-column {
+        min-width:260px;
+        background:#111;
+        padding:10px;
+        border-radius:10px;
+        box-shadow:0 0 10px #ff7b00;
+    }
+
+    .round-title {
+        text-align:center;
+        font-size:20px;
+        margin-bottom:10px;
+        text-shadow:0 0 10px #ff7b00;
+    }
+
+    .match-box {
+        background:#000;
+        border:1px solid #ff7b00;
+        padding:10px;
+        border-radius:10px;
+        margin-bottom:15px;
+        text-align:center;
+        box-shadow:0 0 10px #ff7b00;
+    }
+
+    .match-box button {
+        margin:5px;
+        padding:6px 10px;
+        border:none;
+        border-radius:6px;
+        background:#ff7b00;
+        color:#000;
+        cursor:pointer;
+        font-weight:bold;
+    }
+
+    .disabled {
+        opacity:0.3;
+        pointer-events:none;
+        filter:grayscale(100%);
+    }
+</style>
+
+<script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+
+<h1>ADMIN – Battle de Danse</h1>
+
+<div id="crewList">
+    <input id="crewInput" placeholder="Nom du crew">
+    <button onclick="addCrew()">Ajouter Crew</button>
+    <button onclick="generate()">Générer Bracket</button>
+    <button onclick="reset()">Reset</button>
+</div>
+
+<div id="crewDisplay">
+    <b>Crews ajoutés :</b><br>
+    <div id="crewListDisplay"></div>
+</div>
+
+<div id="bracket"></div>
+
+<script>
+const socket = io();
+let crews = [];
+let votingOpen = false;
+
+/* Rafraîchir la liste */
+function refreshCrewList() {
+    const list = document.getElementById("crewListDisplay");
+
+    if (crews.length === 0) {
+        list.innerHTML = "<i>Aucun crew ajouté</i>";
+        return;
+    }
+
+    list.innerHTML = crews
+        .map((c, i) => 
+            `<div class="crew-item">- ${c} 
+                <button class="delete-btn" onclick="deleteCrew(${i})">Supprimer</button>
+            </div>`
+        )
+        .join("");
+}
+
+/* Ajouter un crew */
+function addCrew() {
+    const name = document.getElementById("crewInput").value.trim();
+    if (!name) return;
+
+    if (crews.some(c => c.toLowerCase() === name.toLowerCase())) {
+        alert("Ce crew existe déjà !");
+        return;
+    }
+
+    crews.push(name);
+    document.getElementById("crewInput").value = "";
+    refreshCrewList();
+}
+
+/* Supprimer un crew */
+function deleteCrew(index) {
+    crews.splice(index, 1);
+    refreshCrewList();
+}
+
+/* Générer bracket */
+function generate() {
+    if (crews.length < 2) {
+        alert("Ajoute au moins 2 crews.");
+        return;
+    }
+    socket.emit("generateBracket", crews);
+}
+
+/* Reset */
+function reset() {
+    crews = [];
+    refreshCrewList();
+    socket.emit("resetBracket");
+}
+
+/* Désactiver les boutons VOTE pendant un vote */
+function lockVoteButtons() {
+    document.querySelectorAll(".vote-btn").forEach(btn => {
+        if (!btn.classList.contains("finished")) {
+            btn.classList.add("disabled");
+        }
+    });
+}
+
+/* Réactiver les boutons VOTE */
+function unlockVoteButtons() {
+    document.querySelectorAll(".vote-btn").forEach(btn => {
+        if (!btn.classList.contains("finished")) {
+            btn.classList.remove("disabled");
+        }
+    });
+}
+
+/* Synchronisation vote */
+socket.on("voteStarted", () => {
+    votingOpen = true;
+    lockVoteButtons();
+});
+
+socket.on("voteEnded", () => {
+    votingOpen = false;
+    unlockVoteButtons();
+});
+
+/* Affichage du bracket */
+socket.on("bracketUpdate", (bracket) => {
+    const container = document.getElementById("bracket");
+    container.innerHTML = "";
+
+    bracket.rounds.forEach((round, rIndex) => {
+        const col = document.createElement("div");
+        col.className = "round-column";
+
+        const title = document.createElement("div");
+        title.className = "round-title";
+
+        if (rIndex === 0 && bracket.rounds.length > 1) title.textContent = "Qualification";
+        else if (rIndex === bracket.rounds.length - 1) title.textContent = "Finale";
+        else if (rIndex === bracket.rounds.length - 2) title.textContent = "Demi‑Finale";
+        else title.textContent = "Round " + rIndex;
+
+        col.appendChild(title);
+
+        round.forEach((m, mIndex) => {
+            if (!m) return;
+
+            const box = document.createElement("div");
+            box.className = "match-box";
+
+            let winnerText = "";
+            const matchFinished = Boolean(m.winner);
+
+            if (matchFinished) {
+                winnerText = `
+                    <br>
+                    <span style="
+                        color:#00ff00;
+                        font-weight:bold;
+                        text-shadow:0 0 10px #00ff00;
+                    ">
+                        Gagnant : ${m.winner}
+                    </span>
+                `;
+            }
+
+            box.innerHTML = `
+                <b>Match #${mIndex+1}</b><br>
+                ${m.a || "-"}<br>vs<br>${m.b || "-"}<br>
+                ${winnerText}
+            `;
+
+            /* Bouton DUEL */
+            const duelBtn = document.createElement("button");
+            duelBtn.textContent = "Duel";
+
+            /* Bouton VOTE */
+            const voteBtn = document.createElement("button");
+            voteBtn.textContent = "Vote (20s)";
+            voteBtn.classList.add("vote-btn");
+
+            /* 🔥 Désactiver si match terminé */
+            if (matchFinished) {
+                duelBtn.classList.add("disabled");
+                voteBtn.classList.add("disabled");
+                voteBtn.classList.add("finished"); // 🔥 Empêche réactivation
+            } else {
+                duelBtn.onclick = () =>
+                    socket.emit("launchDuel", { round: rIndex, index: mIndex });
+
+                voteBtn.onclick = () => {
+                    if (votingOpen) {
+                        alert("Un vote est déjà en cours !");
+                        return;
+                    }
+                    socket.emit("startVoteForMatch", {
+                        round: rIndex,
+                        index: mIndex,
+                        duration: 20
+                    });
+                };
+            }
+
+            box.appendChild(duelBtn);
+            box.appendChild(voteBtn);
+
+            col.appendChild(box);
+        });
+
+        container.appendChild(col);
+    });
+
+    if (votingOpen) lockVoteButtons();
+    else unlockVoteButtons();
+});
+
+refreshCrewList();
+</script>
+
+</body>
+</html>
